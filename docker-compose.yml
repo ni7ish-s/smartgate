@@ -1,0 +1,81 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SmartGate — Docker Compose
+# Services: postgres, redis, gateway, dashboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Postgres ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     smartgate
+      POSTGRES_PASSWORD: smartgate
+      POSTGRES_DB:       smartgate
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./postgres/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartgate"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Gateway ────────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT:         3000
+      NODE_ENV:     production
+      DATABASE_URL: postgresql://smartgate:smartgate@postgres:5432/smartgate
+      REDIS_URL:    redis://redis:6379
+      JWT_SECRET:   ${JWT_SECRET:-change_me_in_production}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Dashboard (Phase 6) ────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    environment:
+      VITE_GATEWAY_URL: http://localhost:3000
+    depends_on:
+      - gateway
+    profiles:
+      - dashboard   # opt-in: docker compose --profile dashboard up
+
+volumes:
+  pg_data:
+  redis_data:
