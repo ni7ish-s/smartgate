@@ -1,4 +1,5 @@
 import { invalidateCache } from '../services/routeLoader.js'
+import crypto from 'crypto'
 
 /**
  * admin.js — Route management API
@@ -107,3 +108,41 @@ export default async function adminRoutes(fastify) {
     return reply.send({ ok: true, message: 'Route cache invalidated' })
   })
 }
+
+  // ── API Keys ────────────────────────────────────────────────────────────────
+
+  // Generate and store a new API key
+  fastify.post('/keys', async (request, reply) => {
+    const { name } = request.body
+    if (!name) return reply.code(400).send({ error: 'name is required' })
+
+    // Generate a secure random key
+    const rawKey = crypto.randomBytes(32).toString('hex')
+    const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex')
+
+    const { rows } = await fastify.db.query(
+      `INSERT INTO api_keys (key_hash, name) VALUES ($1, $2) RETURNING id, name, created_at`,
+      [keyHash, name]
+    )
+
+    // Return the raw key ONCE — we never store it, can't retrieve it again
+    return reply.code(201).send({ ...rows[0], key: rawKey })
+  })
+
+  // List all keys (never returns the actual key, only metadata)
+  fastify.get('/keys', async (_req, reply) => {
+    const { rows } = await fastify.db.query(
+      `SELECT id, name, active, created_at, last_used_at FROM api_keys ORDER BY created_at DESC`
+    )
+    return reply.send(rows)
+  })
+
+  // Revoke a key
+  fastify.delete('/keys/:id', async (request, reply) => {
+    const { rows } = await fastify.db.query(
+      `UPDATE api_keys SET active = false WHERE id = $1 RETURNING id`,
+      [request.params.id]
+    )
+    if (!rows[0]) return reply.code(404).send({ error: 'Key not found' })
+    return reply.send({ revoked: rows[0].id })
+  })

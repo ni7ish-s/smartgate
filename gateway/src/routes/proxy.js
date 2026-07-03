@@ -1,17 +1,5 @@
 import { getRoutes, matchRoute } from '../services/routeLoader.js'
 
-/**
- * proxy.js — Dynamic reverse proxy
- * ---------------------------------
- * Registers a wildcard catch-all route (`/*`) that:
- *  1. Loads active route rules from Postgres (with in-memory cache)
- *  2. Matches the incoming path to the best (longest-prefix) rule
- *  3. Rewrites and forwards the request to the upstream service
- *  4. Streams the upstream response back to the client
- *
- * This is Phase 1 — auth, rate-limiting, and logging are added in later phases
- * as separate Fastify hooks/plugins layered on top of this handler.
- */
 export default async function proxyRoutes(fastify) {
   fastify.all('/*', async (request, reply) => {
     const routes = await getRoutes(fastify.db)
@@ -21,9 +9,19 @@ export default async function proxyRoutes(fastify) {
       return reply.code(404).send({
         error: 'No route matched',
         path: request.url,
-        hint: 'Add a route via the SmartGate dashboard or POST /admin/routes',
+        hint: 'Add a route via POST /admin/routes',
       })
     }
+
+    // If route requires auth, run the authenticate decorator
+    if (route.auth_required) {
+      await fastify.authenticate(request, reply)
+      if (reply.sent) return // auth rejected, response already sent
+    }
+
+    // Rate limiting
+    await fastify.rateLimit(request, reply, route)
+    if (reply.sent) return // limit exceeded, response already sent
 
     // Build upstream URL
     let upstreamPath = request.url
@@ -34,7 +32,6 @@ export default async function proxyRoutes(fastify) {
 
     request.log.info({ upstreamUrl, routeId: route.id }, '→ proxying request')
 
-    // Forward request to upstream, streaming the response back
     try {
       const upstreamResponse = await fetch(upstreamUrl, {
         method: request.method,
@@ -42,19 +39,15 @@ export default async function proxyRoutes(fastify) {
         body: ['GET', 'HEAD'].includes(request.method)
           ? undefined
           : await request.body?.text?.() ?? undefined,
-        // Don't follow redirects — let the client handle them
         redirect: 'manual',
       })
 
-      // Copy status + headers from upstream
       reply.code(upstreamResponse.status)
       for (const [key, value] of upstreamResponse.headers) {
-        // Skip hop-by-hop headers
         if (HOP_BY_HOP.has(key.toLowerCase())) continue
         reply.header(key, value)
       }
 
-      // Add a tracing header so clients know SmartGate handled the request
       reply.header('x-smartgate-route', route.id)
       reply.header('x-smartgate-upstream', route.upstream)
 
@@ -70,12 +63,6 @@ export default async function proxyRoutes(fastify) {
   })
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Build headers to forward upstream.
- * Adds standard proxy headers (X-Forwarded-For, etc.).
- */
 function buildForwardHeaders(request) {
   const headers = new Headers()
 
@@ -84,7 +71,6 @@ function buildForwardHeaders(request) {
     headers.set(key, value)
   }
 
-  // Standard proxy headers
   const clientIp = request.ip ?? request.headers['x-forwarded-for'] ?? 'unknown'
   headers.set('x-forwarded-for', clientIp)
   headers.set('x-forwarded-host', request.hostname)
@@ -92,10 +78,15 @@ function buildForwardHeaders(request) {
   headers.set('x-real-ip', clientIp)
   headers.set('via', '1.1 smartgate')
 
+  // Forward client identity downstream if auth passed
+  if (request.clientId) {
+    headers.set('x-client-id', request.clientId)
+    headers.set('x-client-type', request.clientType)
+  }
+
   return headers
 }
 
-/** HTTP/1.1 hop-by-hop headers — must not be forwarded */
 const HOP_BY_HOP = new Set([
   'connection',
   'keep-alive',
