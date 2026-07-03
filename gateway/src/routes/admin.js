@@ -146,3 +146,19 @@ export default async function adminRoutes(fastify) {
     if (!rows[0]) return reply.code(404).send({ error: 'Key not found' })
     return reply.send({ revoked: rows[0].id })
   })
+
+  // ── Logs ─────────────────────────────────────────────────────────────────
+  fastify.get('/logs', async (_req, reply) => {
+    const { rows } = await fastify.db.query(
+      `SELECT * FROM request_logs ORDER BY logged_at DESC LIMIT 500`
+    )
+    return reply.send(rows)
+  })
+
+  // ── Alerts ────────────────────────────────────────────────────────────────
+  fastify.get('/alerts', async (_req, reply) => {
+    const { rows } = await fastify.db.query(
+      `SELECT * FROM anomaly_alerts ORDER BY created_at DESC`
+    )
+    return reply.send(rows)
+  })

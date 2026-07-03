@@ -68,3 +68,12 @@ VALUES
   ('/api/httpbin', 'https://httpbin.org', true,  false, 50),
   ('/api/echo',    'https://httpbin.org', false, false, 200)
 ON CONFLICT (prefix) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS api_keys (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  key_hash     TEXT        NOT NULL UNIQUE,
+  name         TEXT        NOT NULL,
+  active       BOOLEAN     NOT NULL DEFAULT true,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ
+);

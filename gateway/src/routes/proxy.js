@@ -1,7 +1,14 @@
 import { getRoutes, matchRoute } from '../services/routeLoader.js'
 
 export default async function proxyRoutes(fastify) {
+  // Disable body parsing so we can stream raw body to upstream
+  fastify.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
+    done(null, body)
+  })
+
   fastify.all('/*', async (request, reply) => {
+    const startTime = Date.now()
+
     const routes = await getRoutes(fastify.db)
     const route = matchRoute(routes, request.url)
 
@@ -13,15 +20,15 @@ export default async function proxyRoutes(fastify) {
       })
     }
 
-    // If route requires auth, run the authenticate decorator
+    // Auth check
     if (route.auth_required) {
       await fastify.authenticate(request, reply)
-      if (reply.sent) return // auth rejected, response already sent
+      if (reply.sent) return
     }
 
-    // Rate limiting
+    // Rate limit check
     await fastify.rateLimit(request, reply, route)
-    if (reply.sent) return // limit exceeded, response already sent
+    if (reply.sent) return
 
     // Build upstream URL
     let upstreamPath = request.url
@@ -38,7 +45,7 @@ export default async function proxyRoutes(fastify) {
         headers: buildForwardHeaders(request),
         body: ['GET', 'HEAD'].includes(request.method)
           ? undefined
-          : await request.body?.text?.() ?? undefined,
+          : request.body ?? undefined,
         redirect: 'manual',
       })
 
@@ -51,9 +58,19 @@ export default async function proxyRoutes(fastify) {
       reply.header('x-smartgate-route', route.id)
       reply.header('x-smartgate-upstream', route.upstream)
 
+      // Log after response is flushed
+      reply.raw.on('finish', () => {
+        fastify.logRequest(request, reply, route, startTime)
+      })
+
       return reply.send(upstreamResponse.body)
     } catch (err) {
       request.log.error({ err, upstreamUrl }, '✗ upstream unreachable')
+
+      reply.raw.on('finish', () => {
+        fastify.logRequest(request, reply, route, startTime)
+      })
+
       return reply.code(502).send({
         error: 'Bad Gateway',
         upstream: route.upstream,
@@ -78,7 +95,6 @@ function buildForwardHeaders(request) {
   headers.set('x-real-ip', clientIp)
   headers.set('via', '1.1 smartgate')
 
-  // Forward client identity downstream if auth passed
   if (request.clientId) {
     headers.set('x-client-id', request.clientId)
     headers.set('x-client-type', request.clientType)
