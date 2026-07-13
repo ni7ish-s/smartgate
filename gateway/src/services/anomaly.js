@@ -25,7 +25,7 @@ export function startAnomalyDetection(db) {
 }
 
 async function runDetection(db) {
-  // Pull last 200 requests from the past 2 minutes
+  console.log('Anomaly detection: running check...')
   const { rows: logs } = await db.query(`
     SELECT method, path, status_code, duration_ms, client_ip, logged_at
     FROM request_logs
@@ -33,6 +33,7 @@ async function runDetection(db) {
     ORDER BY logged_at DESC
     LIMIT 200
   `)
+  console.log(`Anomaly detection: found ${logs.length} logs`)
 
   if (logs.length === 0) return
 
@@ -67,14 +68,15 @@ If no anomalies found, respond with an empty array: []
       'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model: 'llama3-8b-8192',
+      model: 'openai/gpt-oss-20b',
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1, // low temperature = more deterministic, less hallucination
+      temperature: 0.1,
     }),
   })
 
   if (!response.ok) {
-    throw new Error(`Groq API error: ${response.status}`)
+    const errBody = await response.text()
+    throw new Error(`Groq API error: ${response.status} - ${errBody}`)
   }
 
   const data = await response.json()

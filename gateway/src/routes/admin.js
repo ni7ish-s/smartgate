@@ -107,7 +107,7 @@ export default async function adminRoutes(fastify) {
     invalidateCache()
     return reply.send({ ok: true, message: 'Route cache invalidated' })
   })
-}
+
 
   // ── API Keys ────────────────────────────────────────────────────────────────
 
@@ -162,3 +162,4 @@ export default async function adminRoutes(fastify) {
     )
     return reply.send(rows)
   })
+}

@@ -10,7 +10,7 @@ export default function Alerts() {
     getAlerts().then(res => setAlerts(res.data)).catch(() => setAlerts([]))
   }, [])
 
-  if (!alerts.length) return <div><h2>Alerts</h2><p style={{ color: '#888' }}>No alerts yet. Anomaly detection runs in phase 6.</p></div>
+  if (!alerts.length) return <div><h2>Alerts</h2><p style={{ color: '#888' }}>No alerts yet. The system is actively monitoring traffic for anomalies.</p></div>
 
   return (
     <div>

@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import Fastify from 'fastify'
+import cors from '@fastify/cors'
 import dbPlugin from './plugins/db.js'
 import redisPlugin from './plugins/redis.js'
 import authPlugin from './plugins/auth.js'
@@ -23,6 +24,10 @@ const fastify = Fastify({
     }),
   },
   bodyLimit: 10 * 1024 * 1024,
+})
+
+await fastify.register(cors, {
+  origin: 'http://localhost:5173'
 })
 
 await fastify.register(dbPlugin)

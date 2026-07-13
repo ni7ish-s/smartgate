@@ -7,7 +7,6 @@ RUN npm ci --omit=dev
 
 # Copy source
 COPY src/ ./src/
-COPY .env.example .env.example
 
 EXPOSE 3000
 

@@ -17,10 +17,12 @@ export default function Traffic() {
         grouped[minute].totalDuration += log.duration_ms ?? 0
       })
 
-      const result = Object.values(grouped).map(g => ({
-        ...g,
-        avgDuration: Math.round(g.totalDuration / g.requests),
-      }))
+      const result = Object.values(grouped)
+        .map(g => ({
+          ...g,
+          avgDuration: Math.round(g.totalDuration / g.requests),
+        }))
+        .sort((a, b) => a.time.localeCompare(b.time))
 
       setData(result)
     })
@@ -30,15 +32,16 @@ export default function Traffic() {
     <div>
       <h2>Traffic</h2>
       <ResponsiveContainer width="100%" height={320}>
-        <LineChart data={data}>
+       <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="time" />
-          <YAxis />
+          <YAxis yAxisId="left" />
+          <YAxis yAxisId="right" orientation="right" />
           <Tooltip />
           <Legend />
-          <Line type="monotone" dataKey="requests" stroke="#0070f3" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="errors" stroke="#ff4444" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="avgDuration" stroke="#f5a623" strokeWidth={2} dot={false} />
+          <Line yAxisId="left" type="monotone" dataKey="requests" stroke="#0070f3" strokeWidth={2} dot={false} />
+          <Line yAxisId="left" type="monotone" dataKey="errors" stroke="#ff4444" strokeWidth={2} dot={false} />
+          <Line yAxisId="right" type="monotone" dataKey="avgDuration" stroke="#f5a623" strokeWidth={2} dot={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
